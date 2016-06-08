@@ -1,4 +1,5 @@
 #! /usr/bin/env python3
+# coding:utf-8
 
 # By ArkC developers
 # Released under GNU General Public License 2
@@ -16,6 +17,7 @@ import requests
 sys.path.insert(0, os.path.dirname(__file__))
 
 from common import certloader, generate_RSA, sendkey
+from common import Mode
 from coordinator import Coordinate
 from server import ServerControl
 from client import ClientControl
@@ -29,7 +31,7 @@ DEFAULT_REQUIRED = 3
 DEFAULT_DNS_SERVERS = [["8.8.8.8", 53]]
 DEFAULT_OBFS4_EXECADDR = "obfs4proxy"
 
-VERSION = "0.2.1"
+VERSION = "0.4.0"
 
 
 def genkey(options):
@@ -40,7 +42,13 @@ def genkey(options):
         commonpath = os.getenv('APPDATA') + os.sep + "ArkC" + os.sep
     else:
         commonpath = os.path.expanduser('~') + os.sep
-    print("Writing to directory " + commonpath)
+    if not os.path.exists(commonpath):
+        try:
+            os.makedirs(commonpath)
+            print("Writing to directory " + commonpath)
+        except OSError:
+            print("Cannot write to directory" + commonpath)
+            sys.exit()
     pri_sha1 = generate_RSA(
         commonpath + 'arkc_pri.asc', commonpath + 'arkc_pub.asc')
     print("SHA1 of the private key is " + pri_sha1)
@@ -76,7 +84,7 @@ def dlmeek():
     print(
         "Downloading meek plugin (meek-server) from github to your home directory.")
     meekfile = requests.get(link, stream=True)
-    if meekfile.status_code == '200':
+    if meekfile.status_code == 200:
         print("Saving to " + localfile)
     else:
         print("Error downloading.")
@@ -95,6 +103,7 @@ def dlmeek():
 
 
 def main():
+    global Mode
     parser = argparse.ArgumentParser(description=None)
     try:
         # Load arguments
@@ -115,6 +124,8 @@ def main():
                             help="Download meek to home directory, overriding normal options")
         parser.add_argument('-c', '--config', dest="config", default=None,
                             help="Specify a configuration files, REQUIRED for ArkC Client to start")
+        parser.add_argument('-g', '--gae', dest="gae", action='store_true',
+                            help="Use GAE mode")
         parser.add_argument('-fs', '--frequent-swap', dest="fs", action="store_true",
                             help="Use frequent connection swapping")
         parser.add_argument('-pn', '--public-addr', dest="pn", action="store_true",
@@ -122,7 +133,7 @@ def main():
 
         parser.add_argument("-v6", dest="ipv6", default="",
                             help="Enable this option to use IPv6 address (only use it if you have one)")
-        print("""ArkC Client V0.2,  by ArkC Technology.
+        print("""ArkC Client V""" + VERSION + """,  by ArkC Technology.
 The programs is distributed under GNU General Public License Version 2.
 """)
 
@@ -137,6 +148,13 @@ The programs is distributed under GNU General Public License Version 2.
         else:
             logging.basicConfig(
                 stream=sys.stdout, level=logging.WARNING, format="%(levelname)s: %(asctime)s; %(message)s")
+
+        if options.gae:
+            Mode = "GAE"
+            logging.info("Using GAE mode.")
+        else:
+            Mode = "VPS"
+            logging.info("Using VPS mode.")
 
         if options.version:
             print("ArkC Client Version " + VERSION)
@@ -183,12 +201,18 @@ The programs is distributed under GNU General Public License Version 2.
 
         if "number" not in data:
             data["number"] = DEFAULT_REQUIRED
+        elif data["number"] > 20:
+            logging.warning(
+                "Requesting " + str(data["number"]) + " connections. Note: most servers impose a limit of 20. You may not receive response at all.")
 
         if data["number"] > 100:
             data["number"] = 100
 
         if "dns_servers" not in data:
-            data["dns_servers"] = DEFAULT_DNS_SERVERS
+            if "dns_server" in data:
+                data["dns_servers"] = data["dns_server"]
+            else:
+                data["dns_servers"] = DEFAULT_DNS_SERVERS
 
         if "pt_exec" not in data:
             data["pt_exec"] = DEFAULT_OBFS4_EXECADDR
@@ -196,11 +220,14 @@ The programs is distributed under GNU General Public License Version 2.
         if "debug_ip" not in data:
             data["debug_ip"] = None
 
-        if "obfs_level" not in data:
-            data["obfs_level"] = 0
-        elif 1 <= int(data["obfs_level"]) <= 2:
-            logging.error(
-                "Support for obfs4proxy is experimental with known bugs. Run this mode at your own risk.")
+        if Mode == "VPS":
+            if "obfs_level" not in data:
+                data["obfs_level"] = 0
+            elif 1 <= int(data["obfs_level"]) <= 2:
+                logging.error(
+                    "Support for obfs4proxy is experimental with known bugs. Run this mode at your own risk.")
+        else:
+            data["obfs_level"] = 3
 
         # Load certificates
         try:

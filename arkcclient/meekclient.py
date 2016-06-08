@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# coding:utf-8
+
 """Adapted from PTproxy, https://github.com/gumblex/ptproxy"""
 
 """ Original License: The MIT License (MIT)
@@ -32,6 +35,7 @@ import time
 
 def exit_handler():
     PT_PROC.kill()
+    PT_PROC.wait()
 
 try:
     DEVNULL = subprocess.DEVNULL
@@ -165,3 +169,4 @@ def main(ptexec, SERVER_string):
         CFG['_run'] = False
         if PT_PROC:
             PT_PROC.kill()
+            PT_PROC.wait()

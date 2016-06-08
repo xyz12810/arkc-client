@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# coding:utf-8
+
 import threading
 import logging
 import os
@@ -16,9 +19,12 @@ from string import ascii_letters
 from common import weighted_choice, get_ip, urlsafe_b64_short_encode, int2base
 from meekclient import main as meekexec
 
+from common import Mode
+
 from pyotp.totp import TOTP
 
 CLOSECHAR = chr(4) * 5
+PROTO_VERSION = "01"
 
 rng = random.SystemRandom()
 
@@ -53,6 +59,10 @@ class Coordinate(object):
         self.clientreceivers_dict = dict()
         self.main_pw = (''.join(rng.choice(ascii_letters) for _ in range(16)))\
             .encode('ASCII')
+
+        # DEBUG:
+        #self.main_pw = b"bbbbbbbbbbbbbbbb"
+
         # each dict maps client connection id to the max index received
         # by the corresponding serverreceiver
         self.serverreceivers_pool = [None] * self.req_num
@@ -168,7 +178,7 @@ class Coordinate(object):
             (
                 req_num_connection_number (HEX, 2 bytes) +
                     used_remote_listening_port (HEX, 4 bytes) +
-                    sha1(cert_pub) ,
+                    sha1(cert_pub),
                 pyotp.TOTP(pri_sha1 + ip_in_hex_form + salt),
                 main_pw,    # must send in encrypted form to avoid MITM
                 ip_in_hex_form,
@@ -182,6 +192,8 @@ class Coordinate(object):
         msg[0] += number_in_hex
         msg[0] += "%04X" % self.remote_port
         msg[0] += self.clientpub_sha1
+        # print(self.clientpub_sha1)
+        # print("======================")
         if self.ipv6 == "":
             myip = int2base(self.ip)
         else:
@@ -193,6 +205,8 @@ class Coordinate(object):
             (self.clientpri_sha1 + myip + salt + number_in_hex).encode('utf-8'))
         msg.append(TOTP(bytes(h.hexdigest(), "UTF-8")).now())
         msg.append(binascii.hexlify(self.main_pw).decode("ASCII"))
+        # print(self.main_pw)
+        # print("======================")
         msg.append(myip)
         msg.append(salt)
         if 1 <= self.obfs_level <= 2:
@@ -201,6 +215,11 @@ class Coordinate(object):
         elif self.obfs_level == 3:
             msg.append(
                 ''.join([random.choice(ascii_letters) for _ in range(5)]))
+        if Mode == "VPS":
+            req_type = "00"
+        elif Mode == "GAE":
+            req_type = "01"
+        msg.append(req_type + PROTO_VERSION)
         return '.'.join(msg)
 
     def issufficient(self):
@@ -224,7 +243,7 @@ class Coordinate(object):
             self.ready = recv
             recv.preferred = True
         self.refreshconn()
-        if self.serverreceivers_pool.count(None) <= 2:
+        if self.serverreceivers_pool.count(None) == 0:
             self.check.clear()
         logging.info("Running socket %d" %
                      (self.req_num - self.serverreceivers_pool.count(None)))
